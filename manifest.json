@@ -1,4 +1,8 @@
 {
-  "arquivo": "https://github.com/Rodrigo-kv/dashboard-at1-inn/releases/download/v2026.10/AT1-26-10.json",
-  "formato": "json"
+  "versao": 1,
+  "origem": "github-release",
+  "arquivo": "https://github.com/Rodrigo-kv/dashboard-at1-inn/releases/latest/download/AT1-dados.json",
+  "formato": "json",
+  "periodo": "2026-10",
+  "atualizadoEm": "2026-10-26T17:10:00-03:00"
 }
