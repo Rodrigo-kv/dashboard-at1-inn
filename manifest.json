@@ -1,8 +1,8 @@
 {
   "versao": 1,
-  "origem": "github-release",
-  "arquivo": "https://github.com/Rodrigo-kv/dashboard-at1-inn/releases/latest/download/AT1-dados.json",
-  "formato": "json",
-  "periodo": "2026-10",
-  "atualizadoEm": "2026-10-26T17:10:00-03:00"
+  "origem": "github-release-latest",
+  "repositorio": "Rodrigo-kv/dashboard-at1-inn",
+  "apiRelease": "https://api.github.com/repos/Rodrigo-kv/dashboard-at1-inn/releases/latest",
+  "padraoArquivo": "^AT1-\\d{2}-\\d{2}\\.json$",
+  "formato": "json"
 }
