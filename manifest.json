@@ -1,9 +1,4 @@
 {
-  "versao": 1,
-  "atualizadoEm": "2026-10-26T15:53:00-03:00",
-  "arquivo": "dados/AT1-26-10.json.gz",
-  "formato": "json.gz",
-  "periodo": "2026-10",
-  "registros": 26223,
-  "sha256": "e60c9361a10328d1e228dfde0ea54f69ece15c931fd8e0482cd80ffedec6d03a"
+  "arquivo": "https://github.com/Rodrigo-kv/dashboard-at1-inn/releases/download/v2026.10/AT1-26-10.json",
+  "formato": "json"
 }
