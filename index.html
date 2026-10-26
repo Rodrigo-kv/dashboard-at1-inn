@@ -7,7 +7,7 @@
 .street-row{cursor:pointer}.street-row:hover td{background:#eff6ff}.street-name-cell{font-weight:700}.street-toggle{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;margin-right:7px;border-radius:50%;background:#dbeafe;color:#0b4e9f;font-weight:900;transition:transform .18s}.street-row.open .street-toggle{transform:rotate(90deg);background:#fee2e2;color:#991b1b}.street-type-row td{padding:0!important;background:#fff8f8!important;white-space:normal!important}.street-type-content{padding:10px 14px 12px 42px;border-bottom:1px solid #fecaca}.street-type-title{display:block;color:#64748b;font-size:11px;font-weight:700;margin-bottom:6px;text-transform:uppercase}.street-type-row[hidden]{display:none}
 .daily-chart-wrap{width:100%;overflow-x:auto;padding:10px 4px 4px}.daily-chart{height:360px;min-width:760px;display:flex;align-items:stretch;gap:10px;border-left:1px solid #dbe3ee;border-bottom:1px solid #dbe3ee;padding:22px 16px 42px 18px;background:linear-gradient(to top,rgba(219,234,254,.34) 1px,transparent 1px);background-size:100% 20%}.day-col{flex:1;min-width:48px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;height:100%}.day-value{font-size:12px;font-weight:800;color:#0b4e9f;margin-bottom:6px;white-space:nowrap}.day-bar{width:min(46px,72%);min-height:2px;background:linear-gradient(180deg,#36a3ff,#0b63ce);border-radius:7px 7px 0 0;box-shadow:0 3px 9px rgba(11,99,206,.2)}.day-label{position:absolute;top:calc(100% + 9px);font-size:11px;font-weight:700;color:#475569;white-space:nowrap;transform:rotate(-35deg);transform-origin:center}.daily-empty{padding:50px;text-align:center;color:#64748b}
 </style></head><body>
-<header><div><h1>Dashboard AT1 INN Retalhos</h1><p id="subtitle">Leitura automática de colunas e atualização por CSV</p></div><div class="actions"><label class="filebtn">Importar CSV<input id="file" type="file" accept=".csv,.txt"></label><button onclick="exportCSV()">Exportar filtrado</button><button onclick="showMapping()">Colunas identificadas</button></div></header>
+<header><div><h1>Dashboard AT1 INN Retalhos</h1><p id="subtitle">Carregamento automático do dados.csv e atualização por CSV</p></div><div class="actions"><label class="filebtn">Importar CSV<input id="file" type="file" accept=".csv,.txt"></label><button onclick="exportCSV()">Exportar filtrado</button><button onclick="showMapping()">Colunas identificadas</button></div></header>
 <div class="wrap"><div class="notice" id="notice"></div>
 <section class="filters" id="filters"><div class="filter"><label>Grupo</label><select id="fGrupo"></select></div><div class="filter"><label>Cluster</label><select id="fCluster"></select></div><div class="filter"><label>Subcluster</label><select id="fSub"></select></div><div class="filter"><label>Município</label><select id="fMun"></select></div><div class="filter"><label>Status O.S.</label><select id="fStatus"></select></div><div class="filter"><label>Empresa</label><select id="fEmpresa"></select></div><div class="filter"><label>Tecnologia</label><select id="fTec"></select></div><div class="filter"><label>Expurgo AT1</label><select id="fExpurgo"></select></div><div class="filter"><label>Status da nota</label><select id="fNota"></select></div><div class="filter"><label>Subsegmentação</label><select id="fSubSeg"></select></div><div class="filter"><label>Status</label><select id="fStatusGeral"></select></div><div class="filter"><label>QTD LOG OS VT</label><select id="fQtdLog"></select></div><div class="filter"><label>CD_BAIXA</label><select id="fBaixa"></select></div><div class="filter"><label>TIPO</label><select id="fTipo"></select></div><div class="filter"><label>Data inicial</label><input id="fIni" type="date"></div><div class="filter"><label>Data final</label><input id="fFim" type="date"></div><div class="filter"><label>&nbsp;</label><button style="width:100%;background:#e8f1fd" onclick="clearFilters()">Limpar filtros</button></div></section>
 <section class="kpis"><div class="kpi"><small>TOTAL DE O.S.</small><strong id="kTotal">-</strong></div><div class="kpi green"><small>EXECUTADAS</small><strong id="kExec">-</strong></div><div class="kpi red"><small>CANCELADAS</small><strong id="kCanc">-</strong></div><div class="kpi orange"><small>EXPURGADAS AT1</small><strong id="kExp">-</strong></div><div class="kpi green"><small>COM PADRÃO</small><strong id="kPad">-</strong></div><div class="kpi"><small>% COM PADRÃO</small><strong id="kPerc">-</strong></div></section>
@@ -60,6 +60,32 @@ function clearFilters(){document.querySelectorAll('#filters select').forEach(s=>
 function exportCSV(){let cols=headers,lines=[cols.map(csvCell).join(';'),...filtered.map(r=>cols.map(c=>csvCell(r[c]||'')).join(';'))];let blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='AT1_filtrado.csv';a.click();URL.revokeObjectURL(a.href)}function csvCell(x){x=String(x);return /[;"\n]/.test(x)?'"'+x.replaceAll('"','""')+'"':x}
 function showMapping(){mapping.innerHTML=Object.entries(map).map(([k,v])=>`<div class="mapitem"><b>${escapeHtml(k)}</b><br>${v?escapeHtml(v):'<span style="color:#b91c1c">não encontrada</span>'}</div>`).join('');modal.classList.add('show')}
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function fmt(n){return Number(n).toLocaleString('pt-BR')}
-file.onchange=async e=>{let f=e.target.files[0];if(!f)return;let ab=await f.arrayBuffer(),text=new TextDecoder('windows-1252').decode(ab);try{rows=parseCSV(text);setup();notice.style.display='block';notice.textContent=`Arquivo ${f.name} carregado com sucesso. As colunas foram identificadas novamente.`}catch(err){notice.style.display='block';notice.textContent='Não foi possível ler o arquivo: '+err.message}};
-(async()=>{try{rows=parseCSV(await decodeEmbedded());setup()}catch(e){notice.style.display='block';notice.textContent='A base inicial não pôde ser aberta automaticamente. Use o botão Importar CSV.';console.error(e)}})();
+function decodeCSVBuffer(ab){
+  const bytes=new Uint8Array(ab);
+  const hasUtf8Bom=bytes.length>=3&&bytes[0]===0xEF&&bytes[1]===0xBB&&bytes[2]===0xBF;
+  if(hasUtf8Bom)return new TextDecoder('utf-8').decode(ab).replace(/^\uFEFF/,'');
+  const utf8=new TextDecoder('utf-8',{fatal:false}).decode(ab);
+  const replacementCount=(utf8.match(/\uFFFD/g)||[]).length;
+  return replacementCount?new TextDecoder('windows-1252').decode(ab):utf8;
+}
+async function loadHostedCSV(){
+  const response=await fetch('dados.csv?v='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw new Error('HTTP '+response.status+' ao acessar dados.csv');
+  const loaded=parseCSV(decodeCSVBuffer(await response.arrayBuffer()));
+  if(!headers.length||!loaded.length)throw new Error('dados.csv está vazio ou não possui cabeçalho válido');
+  rows=loaded;
+  setup();
+  notice.style.display='block';
+  notice.textContent=`Base dados.csv carregada automaticamente: ${rows.length.toLocaleString('pt-BR')} registros.`;
+}
+file.onchange=async e=>{let f=e.target.files[0];if(!f)return;let text=decodeCSVBuffer(await f.arrayBuffer());try{rows=parseCSV(text);setup();notice.style.display='block';notice.textContent=`Arquivo ${f.name} carregado com sucesso. Esta importação é temporária neste navegador; para publicar, substitua o dados.csv no GitHub.`}catch(err){notice.style.display='block';notice.textContent='Não foi possível ler o arquivo: '+err.message}};
+(async()=>{
+  try{await loadHostedCSV()}
+  catch(csvError){
+    console.warn('Falha ao carregar dados.csv; usando a base incorporada.',csvError);
+    try{rows=parseCSV(await decodeEmbedded());setup();notice.style.display='block';notice.textContent='O arquivo dados.csv não foi encontrado ou não pôde ser lido. A base incorporada foi carregada. Publique um arquivo chamado dados.csv na mesma pasta do index.html.'}
+    catch(embedError){notice.style.display='block';notice.textContent='Não foi possível abrir dados.csv nem a base incorporada. Verifique os arquivos publicados no GitHub.';console.error(embedError)}
+  }
+})();
+
 </script></body></html>
