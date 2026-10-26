@@ -9,6 +9,7 @@
 </style></head><body>
 <header><div><h1>Dashboard AT1 INN Retalhos</h1><p id="subtitle">Análises atualizadas automaticamente pela última Release do GitHub</p></div></header>
 <nav class="top-nav" aria-label="Navegação principal"><button id="navAnalise" class="nav-btn active" type="button" onclick="showPage('analise')">Análise</button><button id="navAnalista" class="nav-btn" type="button" onclick="showPage('analista')">Analista</button></nav>
+<div class="wrap" style="padding-bottom:0"></div>
 <section id="pageAnalista" class="app-page"><div class="analyst-shell"><div class="analyst-card"><h2>Página Analista</h2><p>Carregue a base AT1, converta o CSV para JSON ou acesse o repositório do projeto.</p><div class="analyst-actions"><label class="filebtn action-btn">Carregar Arquivo AT1<input id="file" type="file" accept=".csv,.txt"></label><button class="action-btn" type="button" onclick="convertCSVToJSON()">Converter CSV para JSON</button><a class="action-btn" href="https://github.com/Rodrigo-kv" target="_blank" rel="noopener noreferrer" title="GitHub Rodrigo-kv">GitHub Rodrigo-kv</a></div><div class="notice" id="notice"></div></div></div></section>
 <section id="pageAnalise" class="app-page active">
 <div class="wrap"><div class="analysis-toolbar"><button class="action-btn" type="button" onclick="exportCSV()">Exportar filtrado</button><button class="action-btn" type="button" onclick="showMapping()">Colunas identificadas</button></div>
@@ -119,14 +120,26 @@ async function loadLatestReleaseJSON(){
   if(!assets.length)throw new Error('Nenhum arquivo no padrão AT1-AA-MM.json foi encontrado na Release '+(release.tag_name||''));
   assets.sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
   const asset=assets[0];
-  const dataResponse=await fetch(asset.browser_download_url,{cache:'no-store'});
-  if(!dataResponse.ok)throw new Error('HTTP '+dataResponse.status+' ao baixar '+asset.name);
-  const loaded=await dataResponse.json();
+  let dataResponse;
+  try{
+    dataResponse=await fetch(asset.url,{cache:'no-store',headers:{Accept:'application/octet-stream','X-GitHub-Api-Version':'2022-11-28'}});
+    if(!dataResponse.ok)throw new Error('HTTP '+dataResponse.status);
+    const contentType=(dataResponse.headers.get('content-type')||'').toLowerCase();
+    if(contentType.includes('application/vnd.github+json'))throw new Error('A API retornou metadados em vez do arquivo');
+  }catch(apiAssetError){
+    console.warn('Download pela API do asset falhou; tentando browser_download_url.',apiAssetError);
+    dataResponse=await fetch(asset.browser_download_url+'?v='+encodeURIComponent(asset.updated_at||Date.now()),{cache:'no-store'});
+    if(!dataResponse.ok)throw new Error('HTTP '+dataResponse.status+' ao baixar '+asset.name);
+  }
+  const jsonText=await dataResponse.text();
+  let loaded;
+  try{loaded=JSON.parse(jsonText)}catch(parseError){throw new Error('O download de '+asset.name+' não retornou um JSON válido')};
   if(!Array.isArray(loaded)||!loaded.length)throw new Error('O arquivo '+asset.name+' está vazio ou não contém uma lista JSON válida');
   rows=loaded;
   headers=Object.keys(rows[0]||{});
   setup();
   notice.style.display='block';
+  notice.style.background='#ecfdf5'; notice.style.borderLeftColor='#0f9d68';
   notice.textContent=`Release ${release.tag_name||'Latest'} carregada: ${asset.name}, ${rows.length.toLocaleString('pt-BR')} registros.`;
 }
 file.onchange=async e=>{let f=e.target.files[0];if(!f)return;let text=decodeCSVBuffer(await f.arrayBuffer());try{rows=parseCSV(text);setup();notice.style.display='block';notice.textContent=`Arquivo ${f.name} carregado com sucesso. Esta importação é temporária; para publicar, crie uma nova Release no GitHub com o arquivo no padrão AT1-AA-MM.json.`}catch(err){notice.style.display='block';notice.textContent='Não foi possível ler o arquivo: '+err.message}};
