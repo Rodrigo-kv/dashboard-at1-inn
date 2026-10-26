@@ -1,8 +1,0 @@
-{
-  "versao": 1,
-  "origem": "github-release-latest",
-  "repositorio": "Rodrigo-kv/dashboard-at1-inn",
-  "apiRelease": "https://api.github.com/repos/Rodrigo-kv/dashboard-at1-inn/releases/latest",
-  "padraoArquivo": "^AT1-\\d{2}-\\d{2}\\.json$",
-  "formato": "json"
-}
