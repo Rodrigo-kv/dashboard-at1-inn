@@ -1,0 +1,103 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate site files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s index.html
+          test -s data/manifest.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('.')
+          manifest_path = root / 'data' / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
+          months = manifest.get('months')
+
+          if not isinstance(months, list) or not months:
+              raise SystemExit('data/manifest.json sem lista months válida')
+
+          seen = set()
+          for item in months:
+              month = item.get('month')
+              rel = item.get('path')
+              if not isinstance(month, str) or not isinstance(rel, str):
+                  raise SystemExit(f'Entrada mensal inválida: {item!r}')
+              if month in seen:
+                  raise SystemExit(f'Competência duplicada: {month}')
+              seen.add(month)
+
+              clean = rel.split('?', 1)[0].split('#', 1)[0].lstrip('./')
+              candidates = [root / clean]
+              if not clean.startswith('data/'):
+                  candidates.append(root / 'data' / clean)
+              file_path = next((p for p in candidates if p.is_file()), None)
+              if file_path is None:
+                  raise SystemExit(f'Arquivo mensal não encontrado para {month}: {rel}')
+
+              payload = json.loads(file_path.read_text(encoding='utf-8-sig'))
+              rows = payload if isinstance(payload, list) else payload.get('rows') or payload.get('data')
+              if not isinstance(rows, list) or not rows:
+                  raise SystemExit(f'Arquivo mensal vazio ou inválido: {file_path}')
+              expected = item.get('records')
+              if expected is not None and len(rows) != expected:
+                  raise SystemExit(
+                      f'Quantidade divergente em {month}: manifesto={expected}, arquivo={len(rows)}'
+                  )
+
+          print('Validação concluída:', len(months), 'competências e arquivos mensais.')
+          PY
+
+      - name: Prepare Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+          cp index.html _site/index.html
+          cp -R data _site/data
+          touch _site/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
