@@ -2,10 +2,14 @@ name: Publicar dashboard automaticamente das Releases
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - index.html
       - .github/workflows/deploy-pages.yml
+  release:
+    types:
+      - published
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -17,15 +21,19 @@ permissions:
 
 concurrency:
   group: dashboard-at1-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
+
     steps:
-      - name: Checkout da branch principal
+      - name: Checkout da versao atual da branch main
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
 
       - name: Baixar JSONs de todas as Releases
         env:
@@ -33,6 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           rm -rf release-assets _site
           mkdir -p release-assets _site/data/history
 
@@ -40,8 +49,8 @@ jobs:
             gh release list \
               --repo "$GITHUB_REPOSITORY" \
               --limit 100 \
-              --json tagName,isDraft,publishedAt \
-              --jq '.[] | select(.isDraft == false) | .tagName'
+              --json tagName,isDraft,isPrerelease,publishedAt \
+              --jq 'sort_by(.publishedAt) | reverse | .[] | select(.isDraft == false and .isPrerelease == false) | .tagName'
           )
 
           if [ "${#tags[@]}" -eq 0 ]; then
@@ -54,24 +63,29 @@ jobs:
             printf -v order '%03d' "$i"
             target="release-assets/$order"
             mkdir -p "$target"
+
             echo "Baixando JSONs da Release: $tag"
             gh release download "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --dir "$target" \
               --pattern '*.json' || true
+
             i=$((i + 1))
           done
 
           count=$(find release-assets -type f -name '*.json' | wc -l)
           if [ "$count" -eq 0 ]; then
-            echo "ERRO: as Releases não possuem assets JSON."
+            echo "ERRO: as Releases nao possuem assets JSON."
             exit 1
           fi
 
-      - name: Gerar histórico mensal e manifesto
+          echo "Total de arquivos JSON encontrados: $count"
+
+      - name: Gerar historico mensal e manifesto
         shell: bash
         run: |
           set -euo pipefail
+
           python3 - <<'PY'
           import json
           import re
@@ -96,37 +110,43 @@ jobs:
               key = keys.get('DATANOTA') or keys.get('DATA') or keys.get('DTNOTA')
               if not key:
                   return ''
+
               value = str(row.get(key, '')).strip()[:10]
               if re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
                   return value
+
               match = re.fullmatch(r'(\d{2})/(\d{2})/(\d{4})', value)
               if match:
                   return f'{match.group(3)}-{match.group(2)}-{match.group(1)}'
+
               return ''
 
           selected = {}
           origins = {}
 
-          # As pastas 000, 001... seguem a ordem mais recente para mais antiga.
+          # As pastas 000, 001... estao em ordem da Release mais recente para a mais antiga.
+          # A primeira versao valida encontrada para cada competencia prevalece.
           for path in sorted(source.glob('*/*.json')):
               try:
                   payload = json.loads(path.read_text(encoding='utf-8-sig'))
               except Exception as exc:
-                  raise SystemExit(f'ERRO: JSON inválido em {path}: {exc}')
+                  raise SystemExit(f'ERRO: JSON invalido em {path}: {exc}')
 
               rows = payload if isinstance(payload, list) else payload.get('rows') or payload.get('data')
               if not isinstance(rows, list) or not rows:
-                  print(f'AVISO: arquivo vazio ou não tabular ignorado: {path}')
+                  print(f'AVISO: arquivo vazio ou nao tabular ignorado: {path}')
                   continue
 
               by_month = {}
               for position, row in enumerate(rows, start=1):
                   if not isinstance(row, dict):
-                      raise SystemExit(f'ERRO: registro inválido em {path}, posição {position}')
+                      raise SystemExit(f'ERRO: registro invalido em {path}, posicao {position}')
+
                   date = row_date(row)
                   month = date[:7]
                   if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', month):
-                      raise SystemExit(f'ERRO: competência inválida em {path}, posição {position}')
+                      raise SystemExit(f'ERRO: competencia invalida em {path}, posicao {position}')
+
                   by_month.setdefault(month, []).append(row)
 
               for month, month_rows in by_month.items():
@@ -134,10 +154,13 @@ jobs:
                       selected[month] = month_rows
                       origins[month] = str(path)
                   else:
-                      print(f'AVISO: {month} de {path} ignorado; versão mais recente: {origins[month]}')
+                      print(
+                          f'AVISO: {month} de {path} ignorado; '
+                          f'versao mais recente mantida: {origins[month]}'
+                      )
 
           if not selected:
-              raise SystemExit('ERRO: nenhum registro mensal válido foi encontrado.')
+              raise SystemExit('ERRO: nenhum registro mensal valido foi encontrado.')
 
           months = []
           for month in sorted(selected):
@@ -148,57 +171,76 @@ jobs:
                   json.dumps(rows, ensure_ascii=False, separators=(',', ':')),
                   encoding='utf-8'
               )
-              months.append({'month': month, 'path': relative, 'records': len(rows)})
+              months.append({
+                  'month': month,
+                  'path': relative,
+                  'records': len(rows),
+                  'source': origins[month]
+              })
 
-          shutil.copyfile(data_dir / months[-1]['path'], data_dir / 'latest.json')
+          latest_item = months[-1]
+          shutil.copyfile(data_dir / latest_item['path'], data_dir / 'latest.json')
 
           manifest = {
               'schemaVersion': 2,
               'generatedAt': datetime.now(timezone.utc).isoformat(),
               'source': 'GitHub Releases',
               'months': months,
+              'latestMonth': latest_item['month'],
               'latest': 'latest.json'
           }
+
           (data_dir / 'manifest.json').write_text(
               json.dumps(manifest, ensure_ascii=False, indent=2),
               encoding='utf-8'
           )
 
-          print('Competências publicadas:')
+          print('Competencias publicadas:')
           for item in months:
-              print(f"- {item['month']}: {item['records']} registros")
+              print(f"- {item['month']}: {item['records']} registros ({item['source']})")
           PY
 
       - name: Montar e validar o site
         shell: bash
         run: |
           set -euo pipefail
+
           test -s index.html
           test -s _site/data/manifest.json
+
           cp index.html _site/index.html
           touch _site/.nojekyll
 
           python3 - <<'PY'
           import json
+          import re
           from pathlib import Path
 
           root = Path('_site/data')
-          manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+          manifest_path = root / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
           months = manifest.get('months')
 
           if manifest.get('schemaVersion') != 2 or not isinstance(months, list) or not months:
-              raise SystemExit('ERRO: manifest.json inválido.')
+              raise SystemExit('ERRO: manifest.json invalido.')
 
           seen = set()
           for item in months:
               month = item.get('month')
-              path = root / str(item.get('path', ''))
+              relative = str(item.get('path', ''))
               expected = item.get('records')
 
+              if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', str(month)):
+                  raise SystemExit(f'ERRO: competencia invalida no manifesto: {month}')
               if month in seen:
-                  raise SystemExit(f'ERRO: competência duplicada: {month}')
-              seen.add(month)
+                  raise SystemExit(f'ERRO: competencia duplicada: {month}')
+              if not relative.startswith('history/') or '..' in relative:
+                  raise SystemExit(f'ERRO: caminho mensal inseguro: {relative}')
+              if not isinstance(expected, int) or expected <= 0:
+                  raise SystemExit(f'ERRO: quantidade invalida em {month}: {expected}')
 
+              seen.add(month)
+              path = root / relative
               if not path.is_file():
                   raise SystemExit(f'ERRO: arquivo mensal ausente: {path}')
 
@@ -206,7 +248,15 @@ jobs:
               if not isinstance(rows, list) or len(rows) != expected:
                   raise SystemExit(f'ERRO: quantidade divergente em {month}')
 
-          print(f'Validação concluída: {len(months)} competência(s).')
+          latest_month = months[-1]['month']
+          if manifest.get('latestMonth') != latest_month:
+              raise SystemExit('ERRO: latestMonth diverge da ultima competencia.')
+
+          latest_rows = json.loads((root / 'latest.json').read_text(encoding='utf-8'))
+          if len(latest_rows) != months[-1]['records']:
+              raise SystemExit('ERRO: latest.json diverge da ultima competencia.')
+
+          print(f'Validacao concluida: {len(months)} competencia(s). Ultima: {latest_month}.')
           PY
 
       - name: Configurar GitHub Pages
@@ -219,11 +269,12 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Publicar no GitHub Pages
         id: deployment
